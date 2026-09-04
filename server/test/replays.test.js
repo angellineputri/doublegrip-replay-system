@@ -19,7 +19,7 @@ test('POST /api/replays — creates a replay and engages the lock', async () => 
   assert.ok(res.body.id, 'response has id');
   assert.ok(typeof res.body.clip_start === 'number', 'clip_start is a number');
   assert.ok(typeof res.body.clip_end === 'number', 'clip_end is a number');
-  assert.ok(res.body.clip_end - res.body.clip_start <= 20, 'clip window is at most 20 seconds');
+  assert.ok(res.body.clip_end - res.body.clip_start <= 20 * 1000, 'clip window is at most 20 seconds');
   createdId = res.body.id;
 });
 

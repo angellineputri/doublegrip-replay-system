@@ -1,19 +1,15 @@
-// Models a continuously-running 60s buffer as a virtual clock.
-// "Now" = time elapsed since server start, modulo the sample clip's duration.
-// A replay request captures [now-20, now] as the clip's start/end timestamps.
+// BUFFER_CAPACITY_SECONDS marks the architectural boundary of the simulated ring buffer.
+// In a real system, frames older than this would be evicted. Here it's never enforced
+// because the only replay window (20s) is always well within the cap — no eviction logic needed.
+const BUFFER_CAPACITY_SECONDS = 60;
+const REPLAY_WINDOW_MS = 20 * 1000;
 
-const SERVER_START = Date.now();
-const BUFFER_WINDOW_SEC = 60;
-const REPLAY_WINDOW_SEC = 20;
-
-function getCurrentBufferTime() {
-  return Math.floor((Date.now() - SERVER_START) / 1000) % BUFFER_WINDOW_SEC;
-}
-
+// Real-time subtraction stands in for a ring buffer: since no continuous frame storage
+// exists in this simulation, wall-clock arithmetic is sufficient and correct.
 function freezeReplayWindow() {
-  const now = getCurrentBufferTime();
-  const start = Math.max(0, now - REPLAY_WINDOW_SEC);
-  return { start, end: now, capturedAt: new Date().toISOString() };
+  const end = Date.now();
+  const start = end - REPLAY_WINDOW_MS;
+  return { start, end, capturedAt: new Date().toISOString() };
 }
 
-module.exports = { getCurrentBufferTime, freezeReplayWindow };
+module.exports = { freezeReplayWindow };
