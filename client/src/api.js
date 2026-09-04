@@ -14,6 +14,8 @@ async function request(path, options = {}) {
   return res.json();
 }
 
+export const getSystem = () => request('/system');
+
 export const createReplay = () => request('/replays', { method: 'POST' });
 
 export const getReplay = (id) => request(`/replays/${id}`);

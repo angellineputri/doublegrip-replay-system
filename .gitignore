@@ -1,4 +1,5 @@
 node_modules/
 server/replays.db
+server/media/
 .env
 .DS_Store

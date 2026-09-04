@@ -6,21 +6,38 @@ const { freezeReplayWindow } = require('../bufferService');
 const router = express.Router();
 
 let activeReplayLock = false;
+let activeReplayId = null;
+let lockTimer = null;
+
+function releaseLock() {
+  activeReplayLock = false;
+  activeReplayId = null;
+  clearTimeout(lockTimer);
+  lockTimer = null;
+}
 
 // GET /api/system
 router.get('/system', (req, res) => {
-  res.json({ state: activeReplayLock ? 'replaying' : 'ready' });
+  res.json({
+    state: activeReplayLock ? 'replaying' : 'ready',
+    activeReplayId,
+  });
 });
 
 // POST /api/replays
 router.post('/replays', (req, res) => {
   if (activeReplayLock) {
-    return res.status(409).json({ error: 'Replay already in progress' });
+    return res.status(409).json({ error: 'Replay already in progress', activeReplayId });
   }
   activeReplayLock = true;
 
   const { start, end, capturedAt } = freezeReplayWindow();
   const id = randomUUID();
+  activeReplayId = id;
+
+  // Safety net: auto-release lock after 60s in case the client never sends resume.
+  clearTimeout(lockTimer);
+  lockTimer = setTimeout(releaseLock, 60 * 1000);
 
   db.prepare(`
     INSERT INTO replays (id, clip_start, clip_end, created_at, status)
@@ -57,7 +74,7 @@ router.post('/replays/:id/events', (req, res) => {
   }
   if (event_type === 'resume') {
     db.prepare('UPDATE replays SET status = ? WHERE id = ?').run('resumed', req.params.id);
-    activeReplayLock = false; // release the lock — back to ready
+    releaseLock();
   }
 
   res.status(201).json({ id: eventId, event_type, created_at: new Date().toISOString() });
