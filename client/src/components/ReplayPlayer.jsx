@@ -11,7 +11,6 @@ export default function ReplayPlayer({
   reportSpeedChange,
 }) {
   const [paused, setPaused] = useState(false);
-  const [muted, setMuted] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [clampedAtEnd, setClampedAtEnd] = useState(false);
   const [activeSegment, setActiveSegment] = useState(1);
@@ -21,7 +20,7 @@ export default function ReplayPlayer({
     const video = videoRef.current;
     if (!video || !currentReplay) return;
     video.currentTime = currentReplay.segment1.start;
-    video.play().catch(() => {});
+    video.play().catch((err) => console.warn('video.play() rejected:', err.message));
     setPaused(false);
     setClampedAtEnd(false);
     setActiveSegment(1);
@@ -40,7 +39,7 @@ export default function ReplayPlayer({
     if (isWrapped && activeSegment === 1 && t >= segment1.end) {
       // Mid-clip stitch — not the end, just crossing the loop boundary.
       video.currentTime = segment2.start;
-      video.play().catch(() => {}); // seek alone won't resume if video is in ended state
+      video.play().catch((err) => console.warn('video.play() rejected:', err.message)); // seek alone won't resume if video is in ended state
       setActiveSegment(2);
       return;
     }
@@ -92,7 +91,7 @@ export default function ReplayPlayer({
     if (wasAtEnd) {
       setClampedAtEnd(false);
       setPaused(false);
-      video.play().catch(() => {});
+      video.play().catch((err) => console.warn('video.play() rejected:', err.message));
     }
   }
 
@@ -117,7 +116,7 @@ export default function ReplayPlayer({
     const video = videoRef.current;
     if (!video) return;
     video.currentTime = currentReplay.segment2.start;
-    video.play().catch(() => {});
+    video.play().catch((err) => console.warn('video.play() rejected:', err.message));
     setActiveSegment(2);
   }
 
@@ -130,7 +129,6 @@ export default function ReplayPlayer({
         ref={videoRef}
         src={VIDEO_URL}
         playsInline
-        muted={muted}
         onTimeUpdate={handleTimeUpdate}
         onEnded={handleEnded}
         style={styles.video}
@@ -161,9 +159,6 @@ export default function ReplayPlayer({
         </button>
         <button style={{ ...styles.btn, opacity: playPauseDisabled ? 0.3 : 1 }} onClick={togglePlayPause} disabled={playPauseDisabled}>
           {paused ? '▶ Play' : '⏸ Pause'}
-        </button>
-        <button style={styles.btn} onClick={() => setMuted(m => !m)} disabled={controlsDisabled}>
-          {muted ? '🔇' : '🔊'}
         </button>
         <button style={styles.btn} onClick={toggleSpeed} disabled={controlsDisabled}>
           {speed === 1 ? '0.5×' : '1×'}

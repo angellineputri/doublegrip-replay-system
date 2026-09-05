@@ -25,6 +25,7 @@ export default function App() {
 
 
   const [started, setStarted] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyReplays, setHistoryReplays] = useState(null);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -34,6 +35,14 @@ export default function App() {
   const [replayedAt, setReplayedAt] = useState(null);
   const [resumedAt, setResumedAt] = useState(null);
   const prevLiveTimeRef = useRef(0);
+
+  useEffect(() => {
+    function handleKey(e) {
+      if (e.code === 'KeyI') setShowDebug((v) => !v);
+    }
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, []);
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -75,6 +84,18 @@ export default function App() {
     liveVideoRef.current?.play();
     setStarted(true);
   }
+
+  useEffect(() => {
+    if (started) return;
+    function handleKey(e) {
+      if (e.code === 'Enter' || e.code === 'Space') {
+        e.preventDefault();
+        startLive();
+      }
+    }
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [started]);
 
   // Mute live audio during replay so it doesn't bleed over the clip; unmute on return to live.
   useEffect(() => {
@@ -120,26 +141,31 @@ export default function App() {
         />
       )}
 
-      <div style={styles.debug}>
-        <div><b>state:</b> {status === 'ready' ? 'live' : status} {hasLooped ? '(looped)' : '(first pass)'}</div>
-        <div><b>live:</b> {debugLive.toFixed(2)}s</div>
-        <div>
-          <b>replay window:</b>{' '}
-          {debugWindow.isWrapped
-            ? `${debugWindow.segment1.start.toFixed(2)}→${debugWindow.segment1.end.toFixed(2)} + ${debugWindow.segment2.start.toFixed(2)}→${debugWindow.segment2.end.toFixed(2)} (wrap)`
-            : `${debugWindow.segment1.start.toFixed(2)}s → ${debugWindow.segment1.end.toFixed(2)}s`}
-        </div>
-        {replayedAt !== null && (
+      {showDebug && (
+        <div style={styles.debug}>
+          <div><b>state:</b> {status === 'ready' ? 'live' : status} {hasLooped ? '(looped)' : '(first pass)'}</div>
+          <div><b>live:</b> {debugLive.toFixed(2)}s</div>
           <div>
-            <b>replayed at:</b>{' '}
-            {replayedAt.isWrapped
-              ? `${replayedAt.segment1.start.toFixed(2)}→${replayedAt.segment1.end.toFixed(2)} + ${replayedAt.segment2.start.toFixed(2)}→${replayedAt.segment2.end.toFixed(2)} (wrap)`
-              : `${replayedAt.segment1.start.toFixed(2)}s → ${replayedAt.segment1.end.toFixed(2)}s`}
-            {status !== 'ready' && ` (now: ${debugReplay.toFixed(2)}s)`}
+            <b>replay window:</b>{' '}
+            {debugWindow.isWrapped
+              ? `${debugWindow.segment1.start.toFixed(2)}→${debugWindow.segment1.end.toFixed(2)} + ${debugWindow.segment2.start.toFixed(2)}→${debugWindow.segment2.end.toFixed(2)} (wrap)`
+              : `${debugWindow.segment1.start.toFixed(2)}s → ${debugWindow.segment1.end.toFixed(2)}s`}
           </div>
-        )}
-        {resumedAt !== null && <div><b>resumed at:</b> {resumedAt.toFixed(2)}s</div>}
-      </div>
+          {replayedAt !== null && (
+            <div>
+              <b>replayed at:</b>{' '}
+              {replayedAt.isWrapped
+                ? `${replayedAt.segment1.start.toFixed(2)}→${replayedAt.segment1.end.toFixed(2)} + ${replayedAt.segment2.start.toFixed(2)}→${replayedAt.segment2.end.toFixed(2)} (wrap)`
+                : `${replayedAt.segment1.start.toFixed(2)}s → ${replayedAt.segment1.end.toFixed(2)}s`}
+              {status !== 'ready' && ` (now: ${debugReplay.toFixed(2)}s)`}
+            </div>
+          )}
+          {resumedAt !== null && <div><b>resumed at:</b> {resumedAt.toFixed(2)}s</div>}
+        </div>
+      )}
+
+
+      <div style={styles.debugHint}>I — info</div>
 
       <button style={styles.historyBtn} onClick={historyOpen ? () => setHistoryOpen(false) : openHistory}>
         History{historyReplays !== null ? ` (${historyReplays.length})` : ''}
@@ -175,8 +201,14 @@ const styles = {
     lineHeight: 1.8, zIndex: 9999,
     pointerEvents: 'none',
   },
+  debugHint: {
+    position: 'fixed', bottom: 64, left: 16,
+    color: 'rgba(255,255,255,0.25)', fontSize: 11,
+    fontFamily: 'monospace', pointerEvents: 'none',
+    zIndex: 9999,
+  },
   historyBtn: {
-    position: 'fixed', bottom: 24, right: 16,
+    position: 'fixed', bottom: 24, left: 16,
     zIndex: 7000,
     padding: '8px 16px', borderRadius: 8,
     background: 'rgba(255,255,255,0.12)',

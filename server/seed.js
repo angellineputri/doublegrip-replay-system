@@ -2,6 +2,7 @@
 
 const { randomUUID } = require('crypto');
 const db = require('./db');
+const { log } = require('./logger');
 
 function seedIfEmpty() {
   if (process.env.NODE_ENV === 'test') return;
@@ -9,36 +10,41 @@ function seedIfEmpty() {
   const { count } = db.prepare('SELECT COUNT(*) as count FROM replays').get();
   if (count > 0) return;
 
+  log('info', 'empty database detected — seeding with sample replays');
+
   const now = Date.now();
   const WINDOW = 20000;
 
   const rows = [
     {
+      // Viewed 4 times total (1 initial + 3 replay-agains), slowed down for review.
       id: randomUUID(),
       clip_start: now - 18 * 60 * 1000,
       clip_end: now - 18 * 60 * 1000 + WINDOW,
       created_at: new Date(now - 18 * 60 * 1000).toISOString(),
-      replay_count: 3,
+      replay_count: 4,
       playback_speed: 0.5,
       status: 'resumed',
     },
     {
+      // Viewed twice (1 initial + 1 replay-again).
       id: randomUUID(),
       clip_start: now - 10 * 60 * 1000,
       clip_end: now - 10 * 60 * 1000 + WINDOW,
       created_at: new Date(now - 10 * 60 * 1000).toISOString(),
-      replay_count: 1,
+      replay_count: 2,
       playback_speed: 1.0,
       status: 'resumed',
     },
     {
+      // Viewed once, never replayed again, abandoned (tab closed mid-review).
       id: randomUUID(),
       clip_start: now - 3 * 60 * 1000,
       clip_end: now - 3 * 60 * 1000 + WINDOW,
       created_at: new Date(now - 3 * 60 * 1000).toISOString(),
-      replay_count: 0,
+      replay_count: 1,
       playback_speed: 1.0,
-      status: 'created',
+      status: 'abandoned',
     },
   ];
 

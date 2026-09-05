@@ -2,6 +2,7 @@ const express = require('express');
 const { randomUUID } = require('crypto');
 const db = require('../db');
 const { freezeReplayWindow } = require('../bufferService');
+const { log } = require('../logger');
 
 const router = express.Router();
 
@@ -27,6 +28,7 @@ router.get('/system', (req, res) => {
 // POST /api/replays
 router.post('/replays', (req, res) => {
   if (activeReplayLock) {
+    log('warn', 'replay rejected — lock already held', { activeReplayId });
     return res.status(409).json({ error: 'Replay already in progress', activeReplayId });
   }
   activeReplayLock = true;
@@ -40,6 +42,7 @@ router.post('/replays', (req, res) => {
   clearTimeout(lockTimer);
   lockTimer = setTimeout(() => {
     if (activeReplayId) {
+      log('warn', 'lock auto-released — replay abandoned after 60s timeout', { replayId: activeReplayId });
       db.prepare("UPDATE replays SET status = 'abandoned' WHERE id = ?").run(activeReplayId);
     }
     releaseLock();
@@ -52,6 +55,7 @@ router.post('/replays', (req, res) => {
     VALUES (?, ?, ?, ?, 'created', 1, ?, ?, ?)
   `).run(id, start, end, capturedAt, video_duration ?? null, video_start ?? null, video_end ?? null);
 
+  log('info', 'replay created', { replayId: id, video_start, video_end, video_duration });
   res.status(201).json({ id, clip_start: start, clip_end: end, created_at: capturedAt, status: 'created', replay_count: 1, video_duration: video_duration ?? null, video_start: video_start ?? null, video_end: video_end ?? null });
 });
 
@@ -81,10 +85,12 @@ router.post('/replays/:id/events', (req, res) => {
     db.prepare('UPDATE replays SET playback_speed = ? WHERE id = ?').run(payload.speed, req.params.id);
   }
   if (event_type === 'resume') {
+    log('info', 'replay resumed — lock released', { replayId: req.params.id });
     db.prepare('UPDATE replays SET status = ? WHERE id = ?').run('resumed', req.params.id);
     releaseLock();
   }
   if (event_type === 'abandon') {
+    log('warn', 'replay abandoned — stale lock cleared by client', { replayId: req.params.id });
     db.prepare('UPDATE replays SET status = ? WHERE id = ?').run('abandoned', req.params.id);
     releaseLock();
   }
