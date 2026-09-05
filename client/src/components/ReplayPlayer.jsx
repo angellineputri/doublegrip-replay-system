@@ -11,25 +11,54 @@ export default function ReplayPlayer({
   reportSpeedChange,
 }) {
   const [paused, setPaused] = useState(false);
+  const [muted, setMuted] = useState(false);
   const [speed, setSpeed] = useState(1);
-  const [countdown, setCountdown] = useState(null);
-  const countdownRef = useRef(null);
+  const [clampedAtEnd, setClampedAtEnd] = useState(false);
+  const [activeSegment, setActiveSegment] = useState(1);
 
-  // Fires on first mount (new replay) and whenever replayAgain() refreshes the reference.
+  // Fires on first mount (new replay) and on Replay Again (same frozen window, reset to start).
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !currentReplay) return;
-    video.currentTime = currentReplay.videoStart ?? 0;
+    video.currentTime = currentReplay.segment1.start;
     video.play().catch(() => {});
     setPaused(false);
-    clearInterval(countdownRef.current);
-    setCountdown(null);
+    setClampedAtEnd(false);
+    setActiveSegment(1);
   }, [currentReplay]);
+
+  // onTimeUpdate handles two cases in order of precedence:
+  // 1. Wrapped mid-clip stitch: end of segment1 → jump to segment2 start, keep playing.
+  // 2. True end of clip: pause and hold on last frame.
+  function handleTimeUpdate() {
+    const video = videoRef.current;
+    if (!video || !currentReplay || clampedAtEnd) return;
+
+    const { isWrapped, segment1, segment2 } = currentReplay;
+    const t = video.currentTime;
+
+    if (isWrapped && activeSegment === 1 && t >= segment1.end) {
+      // Mid-clip stitch — not the end, just crossing the loop boundary.
+      video.currentTime = segment2.start;
+      video.play().catch(() => {}); // seek alone won't resume if video is in ended state
+      setActiveSegment(2);
+      return;
+    }
+
+    const trueEnd = isWrapped ? segment2.end : segment1.end;
+    const isInFinalSegment = !isWrapped || activeSegment === 2;
+
+    if (isInFinalSegment && t >= trueEnd) {
+      video.pause();
+      video.currentTime = trueEnd;
+      setPaused(true);
+      setClampedAtEnd(true);
+    }
+  }
 
   function togglePlayPause() {
     const video = videoRef.current;
     if (!video) return;
-    cancelCountdown();
     if (video.paused) {
       video.play();
       setPaused(false);
@@ -41,9 +70,30 @@ export default function ReplayPlayer({
 
   function seekBack() {
     const video = videoRef.current;
-    if (!video) return;
-    const floor = currentReplay?.videoStart ?? 0;
-    video.currentTime = Math.max(floor, video.currentTime - 5);
+    if (!video || !currentReplay) return;
+
+    const { isWrapped, segment1, segment2 } = currentReplay;
+    const wasAtEnd = clampedAtEnd;
+
+    if (!isWrapped || activeSegment === 1) {
+      video.currentTime = Math.max(segment1.start, video.currentTime - 5);
+    } else {
+      // Segment 2: back-5 may need to cross back into segment 1.
+      const newTime = video.currentTime - 5;
+      if (newTime >= segment2.start) {
+        video.currentTime = newTime;
+      } else {
+        const overflow = segment2.start - newTime;
+        video.currentTime = segment1.end - overflow;
+        setActiveSegment(1);
+      }
+    }
+
+    if (wasAtEnd) {
+      setClampedAtEnd(false);
+      setPaused(false);
+      video.play().catch(() => {});
+    }
   }
 
   function toggleSpeed() {
@@ -56,50 +106,23 @@ export default function ReplayPlayer({
   }
 
   function handleReplayAgain() {
-    cancelCountdown();
     replayAgain();
-    // currentTime reset happens in the useEffect above when currentReplay ref changes.
+    // useEffect above resets to segment1.start when currentReplay ref refreshes.
   }
 
-  // Hold on the capture frame when the clip reaches videoEnd, then start countdown.
-  function handleTimeUpdate() {
+  // Natural EOF: if wrapped and still in segment 1, the file ended before onTimeUpdate
+  // could catch t >= segment1.end — stitch to segment 2 here as a fallback.
+  function handleEnded() {
+    if (!currentReplay?.isWrapped || activeSegment !== 1) return;
     const video = videoRef.current;
-    if (!video || !currentReplay) return;
-    if (video.currentTime >= currentReplay.videoEnd) {
-      video.pause();
-      video.currentTime = currentReplay.videoEnd;
-      setPaused(true);
-      startCountdown();
-    }
+    if (!video) return;
+    video.currentTime = currentReplay.segment2.start;
+    video.play().catch(() => {});
+    setActiveSegment(2);
   }
-
-  function startCountdown() {
-    if (countdownRef.current) return; // already counting
-    setCountdown(5);
-    let n = 5;
-    countdownRef.current = setInterval(() => {
-      n -= 1;
-      if (n <= 0) {
-        clearInterval(countdownRef.current);
-        countdownRef.current = null;
-        setCountdown(null);
-        resumeLive();
-      } else {
-        setCountdown(n);
-      }
-    }, 1000);
-  }
-
-  function cancelCountdown() {
-    clearInterval(countdownRef.current);
-    countdownRef.current = null;
-    setCountdown(null);
-  }
-
-  // Intentional no-op: natural end of file also holds the frame, same as videoEnd clamp above.
-  function handleEnded() {}
 
   const controlsDisabled = status !== 'replaying';
+  const playPauseDisabled = controlsDisabled || clampedAtEnd;
 
   return (
     <div style={styles.root}>
@@ -107,40 +130,40 @@ export default function ReplayPlayer({
         ref={videoRef}
         src={VIDEO_URL}
         playsInline
+        muted={muted}
         onTimeUpdate={handleTimeUpdate}
         onEnded={handleEnded}
         style={styles.video}
       />
 
-      {/* Loading overlay */}
       {status === 'loading' && (
         <div style={styles.overlay}>
           <div style={styles.spinner} />
         </div>
       )}
 
-      {/* Countdown overlay — auto-resume after clip ends */}
-      {countdown !== null && (
-        <div style={styles.countdownOverlay}>
-          <p style={styles.countdownLabel}>Resuming live in</p>
-          <p style={styles.countdownNumber}>{countdown}</p>
+      {/* End-of-clip banner — makes the hold state legible, not broken-looking */}
+      {clampedAtEnd && status === 'replaying' && (
+        <div style={styles.endBanner}>
+          End of clip — Replay Again or Resume Live
         </div>
       )}
 
-      {/* Resumed overlay — brief flash before unmounting back to ReadyScreen */}
       {status === 'resumed' && (
         <div style={styles.overlay}>
           <p style={styles.resumedText}>Back to live…</p>
         </div>
       )}
 
-      {/* Player controls — visible during replaying, faded during other sub-states */}
       <div style={{ ...styles.controls, opacity: controlsDisabled ? 0.3 : 1 }}>
         <button style={styles.btn} onClick={seekBack} disabled={controlsDisabled}>
           ↩ –5s
         </button>
-        <button style={styles.btn} onClick={togglePlayPause} disabled={controlsDisabled}>
+        <button style={{ ...styles.btn, opacity: playPauseDisabled ? 0.3 : 1 }} onClick={togglePlayPause} disabled={playPauseDisabled}>
           {paused ? '▶ Play' : '⏸ Pause'}
+        </button>
+        <button style={styles.btn} onClick={() => setMuted(m => !m)} disabled={controlsDisabled}>
+          {muted ? '🔇' : '🔊'}
         </button>
         <button style={styles.btn} onClick={toggleSpeed} disabled={controlsDisabled}>
           {speed === 1 ? '0.5×' : '1×'}
@@ -148,7 +171,7 @@ export default function ReplayPlayer({
         <button style={styles.btn} onClick={handleReplayAgain} disabled={controlsDisabled}>
           ↺ Again
         </button>
-        <button style={{ ...styles.btn, ...styles.resumeBtn }} onClick={() => { cancelCountdown(); resumeLive(); }} disabled={controlsDisabled}>
+        <button style={{ ...styles.btn, ...styles.resumeBtn }} onClick={resumeLive} disabled={controlsDisabled}>
           ▶ Resume Live
         </button>
       </div>
@@ -171,14 +194,14 @@ const styles = {
     animation: 'spin 0.8s linear infinite',
   },
   resumedText: { color: '#fff', fontSize: 22, fontWeight: 600 },
-  countdownOverlay: {
-    position: 'absolute', bottom: 100, left: '50%',
+  endBanner: {
+    position: 'absolute', top: 24, left: '50%',
     transform: 'translateX(-50%)',
-    textAlign: 'center',
-    pointerEvents: 'none',
+    background: 'rgba(0,0,0,0.6)',
+    color: '#fff', fontSize: 14, fontWeight: 600,
+    padding: '6px 16px', borderRadius: 6,
+    pointerEvents: 'none', whiteSpace: 'nowrap',
   },
-  countdownLabel: { color: 'rgba(255,255,255,0.8)', fontSize: 14, marginBottom: 4 },
-  countdownNumber: { color: '#fff', fontSize: 64, fontWeight: 700, lineHeight: 1 },
   controls: {
     position: 'absolute', bottom: 32, left: '50%',
     transform: 'translateX(-50%)',

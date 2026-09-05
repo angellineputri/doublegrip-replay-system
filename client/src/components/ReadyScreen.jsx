@@ -1,8 +1,12 @@
 import { useEffect } from 'react';
 
-export default function ReadyScreen({ liveVideoRef, triggerReplay }) {
+export default function ReadyScreen({ liveVideoRef, triggerReplay, hasLooped }) {
   function capture() {
-    triggerReplay(liveVideoRef.current?.currentTime ?? 0);
+    triggerReplay(
+      liveVideoRef.current?.currentTime ?? 0,
+      liveVideoRef.current?.duration ?? 0,
+      hasLooped,
+    );
   }
 
   // Space/Enter only active while this component is mounted (status === 'ready').

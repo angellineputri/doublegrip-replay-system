@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { createReplay, postEvent, getSystem } from '../api';
+import { computeReplayWindow } from '../utils/replayWindow';
 
 // Keyboard listeners (Space/Enter → triggerReplay) belong in the consuming component,
 // not here — keeps the hook testable in isolation and out of the DOM lifecycle.
@@ -10,7 +11,7 @@ export function useReplaySystem() {
   const [errorMessage, setErrorMessage] = useState(null);
   const resumeTimer = useRef(null);
 
-  const triggerReplay = useCallback(async (liveVideoTime = 0) => {
+  const triggerReplay = useCallback(async (liveVideoTime = 0, clipDuration = 0, hasLooped = false) => {
     // Belt-and-suspenders guard on top of the server's 409 lock.
     // Prevents double-fires from rapid clicks or keyboard listener misfires.
     if (status !== 'ready') return;
@@ -18,11 +19,12 @@ export function useReplaySystem() {
     setStatus('loading');
     setErrorMessage(null);
 
+    // Window is frozen at trigger time and reused for Replay Again — same evidence, same clip.
+    const window = computeReplayWindow(liveVideoTime, clipDuration, hasLooped);
+
     try {
       const replay = await createReplay();
-      const videoEnd = liveVideoTime;
-      const videoStart = Math.max(0, videoEnd - 20);
-      setCurrentReplay({ ...replay, videoStart, videoEnd });
+      setCurrentReplay({ ...replay, ...window });
       setStatus('replaying');
     } catch (err) {
       if (err.status === 409) {
@@ -33,9 +35,7 @@ export function useReplaySystem() {
             await postEvent(system.activeReplayId, 'resume');
           }
           const replay = await createReplay();
-          const videoEnd = liveVideoTime;
-          const videoStart = Math.max(0, videoEnd - 20);
-          setCurrentReplay({ ...replay, videoStart, videoEnd });
+          setCurrentReplay({ ...replay, ...window });
           setStatus('replaying');
         } catch {
           setErrorMessage('Could not start replay. Please try again.');

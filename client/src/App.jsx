@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect } from 'react';
+import { computeReplayWindow } from './utils/replayWindow';
 import { useReplaySystem } from './hooks/useReplaySystem';
 import ReadyScreen from './components/ReadyScreen';
 import ReplayPlayer from './components/ReplayPlayer';
@@ -21,26 +22,49 @@ export default function App() {
   } = useReplaySystem();
 
 
+  const [started, setStarted] = useState(false);
   const [debugLive, setDebugLive] = useState(0);
   const [debugReplay, setDebugReplay] = useState(0);
+  const [hasLooped, setHasLooped] = useState(false);
   const [replayedAt, setReplayedAt] = useState(null);
   const [resumedAt, setResumedAt] = useState(null);
+  const prevLiveTimeRef = useRef(0);
 
   useEffect(() => {
     const id = setInterval(() => {
-      setDebugLive(liveVideoRef.current?.currentTime ?? 0);
+      const t = liveVideoRef.current?.currentTime ?? 0;
+      // Detect loop: currentTime jumped significantly backward (loop attribute resets it).
+      if (t < prevLiveTimeRef.current - 1) setHasLooped(true);
+      prevLiveTimeRef.current = t;
+      setDebugLive(t);
       setDebugReplay(replayVideoRef.current?.currentTime ?? 0);
     }, 100);
     return () => clearInterval(id);
   }, []);
 
-  const replayDebugStart = Math.max(0, debugLive - 20);
-
   const wrappedTrigger = (...args) => {
-    const end = liveVideoRef.current?.currentTime ?? 0;
-    setReplayedAt({ start: Math.max(0, end - 20), end });
+    const t = liveVideoRef.current?.currentTime ?? 0;
+    const d = liveVideoRef.current?.duration ?? 0;
+    setReplayedAt(computeReplayWindow(t, d, hasLooped));
     triggerReplay(...args);
   };
+
+  const debugWindow = computeReplayWindow(
+    debugLive,
+    liveVideoRef.current?.duration ?? 0,
+    hasLooped,
+  );
+
+  function startLive() {
+    liveVideoRef.current?.play();
+    setStarted(true);
+  }
+
+  // Mute live audio during replay so it doesn't bleed over the clip; unmute on return to live.
+  useEffect(() => {
+    if (!liveVideoRef.current || !started) return;
+    liveVideoRef.current.muted = status !== 'ready';
+  }, [status, started]);
 
   const wrappedResume = (...args) => {
     setResumedAt(liveVideoRef.current?.currentTime ?? 0);
@@ -54,15 +78,19 @@ export default function App() {
       <video
         ref={liveVideoRef}
         src={LIVE_VIDEO_URL}
-        autoPlay
         loop
-        muted
         playsInline
         style={styles.liveVideo}
       />
 
-      {status === 'ready' && (
-        <ReadyScreen liveVideoRef={liveVideoRef} triggerReplay={wrappedTrigger} />
+      {!started && (
+        <div style={styles.startOverlay} onClick={startLive}>
+          <button style={styles.startBtn}>▶ Tap to Start</button>
+        </div>
+      )}
+
+      {started && status === 'ready' && (
+        <ReadyScreen liveVideoRef={liveVideoRef} triggerReplay={wrappedTrigger} hasLooped={hasLooped} />
       )}
 
       {(status === 'loading' || status === 'replaying' || status === 'resumed') && (
@@ -77,12 +105,20 @@ export default function App() {
       )}
 
       <div style={styles.debug}>
-        <div><b>state:</b> {status === 'ready' ? 'live' : status}</div>
+        <div><b>state:</b> {status === 'ready' ? 'live' : status} {hasLooped ? '(looped)' : '(first pass)'}</div>
         <div><b>live:</b> {debugLive.toFixed(2)}s</div>
-        <div><b>replay window:</b> {replayDebugStart.toFixed(2)}s → {debugLive.toFixed(2)}s</div>
+        <div>
+          <b>replay window:</b>{' '}
+          {debugWindow.isWrapped
+            ? `${debugWindow.segment1.start.toFixed(2)}→${debugWindow.segment1.end.toFixed(2)} + ${debugWindow.segment2.start.toFixed(2)}→${debugWindow.segment2.end.toFixed(2)} (wrap)`
+            : `${debugWindow.segment1.start.toFixed(2)}s → ${debugWindow.segment1.end.toFixed(2)}s`}
+        </div>
         {replayedAt !== null && (
           <div>
-            <b>replayed at:</b> {replayedAt.start.toFixed(2)}s → {replayedAt.end.toFixed(2)}s
+            <b>replayed at:</b>{' '}
+            {replayedAt.isWrapped
+              ? `${replayedAt.segment1.start.toFixed(2)}→${replayedAt.segment1.end.toFixed(2)} + ${replayedAt.segment2.start.toFixed(2)}→${replayedAt.segment2.end.toFixed(2)} (wrap)`
+              : `${replayedAt.segment1.start.toFixed(2)}s → ${replayedAt.segment1.end.toFixed(2)}s`}
             {status !== 'ready' && ` (now: ${debugReplay.toFixed(2)}s)`}
           </div>
         )}
@@ -111,6 +147,18 @@ const styles = {
     padding: '8px 12px', borderRadius: 6,
     lineHeight: 1.8, zIndex: 9999,
     pointerEvents: 'none',
+  },
+  startOverlay: {
+    position: 'absolute', inset: 0,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    background: 'rgba(0,0,0,0.7)',
+    zIndex: 9000, cursor: 'pointer',
+  },
+  startBtn: {
+    padding: '18px 48px', borderRadius: 12,
+    background: '#fff', color: '#000',
+    fontWeight: 700, fontSize: 22, cursor: 'pointer',
+    border: 'none', boxShadow: '0 4px 24px rgba(0,0,0,0.5)',
   },
   errorOverlay: {
     position: 'absolute', inset: 0,
