@@ -3,6 +3,8 @@ import { computeReplayWindow } from './utils/replayWindow';
 import { useReplaySystem } from './hooks/useReplaySystem';
 import ReadyScreen from './components/ReadyScreen';
 import ReplayPlayer from './components/ReplayPlayer';
+import HistoryPanel from './components/HistoryPanel';
+import { getReplays } from './api';
 
 const LIVE_VIDEO_URL = 'http://localhost:4000/media/sample-court.mp4';
 
@@ -23,6 +25,9 @@ export default function App() {
 
 
   const [started, setStarted] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyReplays, setHistoryReplays] = useState(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [debugLive, setDebugLive] = useState(0);
   const [debugReplay, setDebugReplay] = useState(0);
   const [hasLooped, setHasLooped] = useState(false);
@@ -54,6 +59,17 @@ export default function App() {
     liveVideoRef.current?.duration ?? 0,
     hasLooped,
   );
+
+  async function openHistory() {
+    setHistoryOpen(true);
+    setHistoryLoading(true);
+    try {
+      const data = await getReplays();
+      setHistoryReplays(data);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
 
   function startLive() {
     liveVideoRef.current?.play();
@@ -125,6 +141,17 @@ export default function App() {
         {resumedAt !== null && <div><b>resumed at:</b> {resumedAt.toFixed(2)}s</div>}
       </div>
 
+      <button style={styles.historyBtn} onClick={historyOpen ? () => setHistoryOpen(false) : openHistory}>
+        History{historyReplays !== null ? ` (${historyReplays.length})` : ''}
+      </button>
+
+      <HistoryPanel
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        replays={historyReplays}
+        loading={historyLoading}
+      />
+
       {status === 'error' && (
         <div style={styles.errorOverlay}>
           <p style={styles.errorText}>{errorMessage}</p>
@@ -147,6 +174,16 @@ const styles = {
     padding: '8px 12px', borderRadius: 6,
     lineHeight: 1.8, zIndex: 9999,
     pointerEvents: 'none',
+  },
+  historyBtn: {
+    position: 'fixed', bottom: 24, right: 16,
+    zIndex: 7000,
+    padding: '8px 16px', borderRadius: 8,
+    background: 'rgba(255,255,255,0.12)',
+    backdropFilter: 'blur(6px)',
+    border: '1px solid rgba(255,255,255,0.2)',
+    color: '#fff', fontWeight: 600, fontSize: 13,
+    cursor: 'pointer',
   },
   startOverlay: {
     position: 'absolute', inset: 0,

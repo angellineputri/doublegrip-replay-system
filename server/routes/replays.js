@@ -36,15 +36,23 @@ router.post('/replays', (req, res) => {
   activeReplayId = id;
 
   // Safety net: auto-release lock after 60s in case the client never sends resume.
+  // Marks the row abandoned — distinct from resumed, which requires an explicit user action.
   clearTimeout(lockTimer);
-  lockTimer = setTimeout(releaseLock, 60 * 1000);
+  lockTimer = setTimeout(() => {
+    if (activeReplayId) {
+      db.prepare("UPDATE replays SET status = 'abandoned' WHERE id = ?").run(activeReplayId);
+    }
+    releaseLock();
+  }, 60 * 1000);
+
+  const { video_duration, video_start, video_end } = req.body ?? {};
 
   db.prepare(`
-    INSERT INTO replays (id, clip_start, clip_end, created_at, status)
-    VALUES (?, ?, ?, ?, 'created')
-  `).run(id, start, end, capturedAt);
+    INSERT INTO replays (id, clip_start, clip_end, created_at, status, replay_count, video_duration, video_start, video_end)
+    VALUES (?, ?, ?, ?, 'created', 1, ?, ?, ?)
+  `).run(id, start, end, capturedAt, video_duration ?? null, video_start ?? null, video_end ?? null);
 
-  res.status(201).json({ id, clip_start: start, clip_end: end, created_at: capturedAt, status: 'created' });
+  res.status(201).json({ id, clip_start: start, clip_end: end, created_at: capturedAt, status: 'created', replay_count: 1, video_duration: video_duration ?? null, video_start: video_start ?? null, video_end: video_end ?? null });
 });
 
 // GET /api/replays/:id
@@ -74,6 +82,10 @@ router.post('/replays/:id/events', (req, res) => {
   }
   if (event_type === 'resume') {
     db.prepare('UPDATE replays SET status = ? WHERE id = ?').run('resumed', req.params.id);
+    releaseLock();
+  }
+  if (event_type === 'abandon') {
+    db.prepare('UPDATE replays SET status = ? WHERE id = ?').run('abandoned', req.params.id);
     releaseLock();
   }
 

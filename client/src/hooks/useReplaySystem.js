@@ -21,9 +21,14 @@ export function useReplaySystem() {
 
     // Window is frozen at trigger time and reused for Replay Again — same evidence, same clip.
     const window = computeReplayWindow(liveVideoTime, clipDuration, hasLooped);
+    const videoStart = window.segment1.start;
+    const videoEnd = window.isWrapped ? window.segment2.end : window.segment1.end;
+    const videoDuration = window.isWrapped
+      ? (window.segment1.end - window.segment1.start) + (window.segment2.end - window.segment2.start)
+      : (window.segment1.end - window.segment1.start);
 
     try {
-      const replay = await createReplay();
+      const replay = await createReplay(videoDuration, videoStart, videoEnd);
       setCurrentReplay({ ...replay, ...window });
       setStatus('replaying');
     } catch (err) {
@@ -32,9 +37,9 @@ export function useReplaySystem() {
         try {
           const system = await getSystem();
           if (system.activeReplayId) {
-            await postEvent(system.activeReplayId, 'resume');
+            await postEvent(system.activeReplayId, 'abandon');
           }
-          const replay = await createReplay();
+          const replay = await createReplay(videoDuration, videoStart, videoEnd);
           setCurrentReplay({ ...replay, ...window });
           setStatus('replaying');
         } catch {

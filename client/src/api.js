@@ -16,7 +16,12 @@ async function request(path, options = {}) {
 
 export const getSystem = () => request('/system');
 
-export const createReplay = () => request('/replays', { method: 'POST' });
+export const getReplays = () => request('/replays');
+
+export const createReplay = (videoDuration, videoStart, videoEnd) => request('/replays', {
+  method: 'POST',
+  body: JSON.stringify({ video_duration: videoDuration, video_start: videoStart, video_end: videoEnd }),
+});
 
 export const getReplay = (id) => request(`/replays/${id}`);
 

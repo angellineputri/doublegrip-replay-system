@@ -25,4 +25,9 @@ db.exec(`
   );
 `);
 
+// Idempotent migrations — ignored if columns already exist.
+try { db.exec('ALTER TABLE replays ADD COLUMN video_duration REAL'); } catch {}
+try { db.exec('ALTER TABLE replays ADD COLUMN video_start REAL'); } catch {}
+try { db.exec('ALTER TABLE replays ADD COLUMN video_end REAL'); } catch {}
+
 module.exports = db;
