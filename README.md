@@ -4,6 +4,10 @@ A courtside instant-replay system. One button captures the last 20 seconds of a 
 
 ---
 
+## Demo
+
+[Watch the 3-minute walkthrough] https://drive.google.com/file/d/1SQ1YzpO4m18mVc42WLD-QkiUxOcLD_33/view?usp=sharing
+
 ## Prerequisites
 
 - Node.js 18+
